@@ -1,0 +1,38 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+app = FastAPI(title="Ambient Host Cloud")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+DB = {}
+
+class Command(BaseModel):
+    is_engine_active: bool
+    risk_percentage: float
+    lot: float = 0.01
+    pair: str = "XAUUSD"
+
+@app.get("/")
+def root():
+    return {"status": "Ambient Host Cloud Running", "keys": len(DB)}
+
+@app.post("/api/bot/{api_key}/command")
+def set_command(api_key: str, cmd: Command):
+    DB[api_key] = cmd.dict()
+    print(f"KEY {api_key} -> {cmd.dict()}")
+    return {"ok": True}
+
+@app.get("/api/bot/{api_key}/command")
+def get_command(api_key: str):
+    return DB.get(api_key, {"is_engine_active": False, "risk_percentage": 1.0, "lot": 0.01, "pair": "XAUUSD"})
+
+@app.get("/api/account/{api_key}")
+def get_account(api_key: str):
+    return {"balance": 10450.0, "equity": 10695.5, "pnl": 245.5, "connected": True, "key": api_key}
