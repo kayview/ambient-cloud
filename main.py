@@ -4,7 +4,7 @@ app = FastAPI()
 
 @app.get("/")
 def home():
-    return {"status": "Prime Host Cloud is LIVE"}
+    return {"status": "Ambient Host Cloud is LIVE"}
 
 @app.get("/health")
 def health():
