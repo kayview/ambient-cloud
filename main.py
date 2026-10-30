@@ -1,295 +1,357 @@
-from fastapi import FastAPI, Form, Request, Query
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-from datetime import datetime
-import json, os, secrets
+import 'dart:async';
+import 'dart:math';
+import 'package:flutter/material.dart';
 
-app = FastAPI(title="BP ICT Engine")
+void main() => runApp(const PrimeHostApp());
 
-# ===== CONFIG - EDIT THESE =====
-BRAND_NAME = "BP ICT Engine"  # <-- Change to your brand
-BRAND_SHORT = "BP ICT"
-ADMIN_PASSWORD = "bp_admin_2026_secure"  # <-- Change this
-GOTYME_BANK = "Account: YOUR_GOTYME_NUMBER | Ref: Your Email"
-# ===============================
+class PrimeHostApp extends StatelessWidget {
+  const PrimeHostApp({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark(useMaterial3: true).copyWith(scaffoldBackgroundColor: const Color(0xFF0C0816)),
+      home: const BackgroundWrapper(child: MainNav()),
+    );
+  }
+}
 
-DB_FILE = "licenses.json"
-SIGNALS_FILE = "signals.json"
+// === REAL LIVE BACKGROUND - STORM EDITION ===
+class BackgroundWrapper extends StatefulWidget {
+  final Widget child; const BackgroundWrapper({super.key, required this.child});
+  @override State<BackgroundWrapper> createState() => _BackgroundWrapperState();
+}
+class _BackgroundWrapperState extends State<BackgroundWrapper> with TickerProviderStateMixin {
+  late AnimationController _storm;
+  late AnimationController _flash;
+  late AnimationController _particles;
+  @override void initState(){
+    _storm = AnimationController(vsync: this, duration: const Duration(seconds: 8))..repeat();
+    _flash = AnimationController(vsync: this, duration: const Duration(milliseconds: 3500))..repeat();
+    _particles = AnimationController(vsync: this, duration: const Duration(seconds: 12))..repeat();
+    super.initState();
+  }
+  @override void dispose(){ _storm.dispose(); _flash.dispose(); _particles.dispose(); super.dispose();}
+  @override Widget build(BuildContext context){
+    return Stack(children: [
+      Container(color: const Color(0xFF0C0816)),
+      AnimatedBuilder(animation: _storm, builder: (_,__) => Container(decoration: BoxDecoration(gradient: RadialGradient(center: Alignment(0.3+sin(_storm.value*2*pi)*0.3, -0.8), radius: 1.2+_storm.value*0.3, colors: [const Color(0xFF8B5CF6).withOpacity(0.25+0.1*sin(_storm.value*2*pi)), const Color(0xFF1A0B3A).withOpacity(0.15), Colors.transparent])))),
+      AnimatedBuilder(animation: _particles, builder: (_,__) => CustomPaint(size: Size.infinite, painter: ParticlePainter(t: _particles.value))),
+      AnimatedBuilder(animation: _flash, builder: (_,__) => CustomPaint(size: Size.infinite, painter: RealLightningPainter(t: _flash.value))),
+      Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, const Color(0xFF0C0816).withOpacity(0.85)]))),
+      widget.child,
+    ]);
+  }
+}
 
-def load_json(path, default):
-    if not os.path.exists(path):
-        return default
-    try:
-        with open(path, "r") as f:
-            return json.load(f)
-    except:
-        return default
-
-def save_json(path, data):
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-
-# Persistent storage
-LICENSES = load_json(DB_FILE, {})
-PENDING = load_json("pending.json", [])
-SIGNALS = load_json(SIGNALS_FILE, [])
-ROBOTS = [
-    {"id": 1, "name": "LS ICT Sniper V7.02", "mentor": "Lesego", "winrate": "78%", "tf": "H1/M15/M1", "desc": "Liquidity Sweep + BB/EMA"},
-    {"id": 2, "name": "Gold M5 Scalper", "mentor": "BP", "winrate": "74%", "tf": "M5/M1", "desc": "Wick-purge + ATR Trail"},
-    {"id": 3, "name": "Breaker Block Pro", "mentor": "BP", "winrate": "81%", "tf": "H1/M15", "desc": "Macro Bias + OB"},
-]
-
-PARTNERS = {"BP-ADMIN": {"owner": "admin", "earnings": 0, "referrals": []}}
-
-def make_html(title, body):
-    return f"""
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title} - {BRAND_NAME}</title>
-<style>
-body{{margin:0;font-family:Inter,system-ui;background:#050A14;color:#fff;}}
-.grid-bg{{background:radial-gradient(circle at 50% 0%, #0A1A3A 0%, #050A14 70%);min-height:100vh;}}
-.topbar{{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:#050A14;border-bottom:1px solid #1A2A4A;position:sticky;top:0;}}
-.card{{background:linear-gradient(180deg,#0F1F3A 0%,#0A1428 100%);border:1px solid #1E3A5F;border-radius:16px;padding:24px;max-width:440px;margin:40px auto;box-shadow:0 20px 60px rgba(0,150,255,0.15);}}
-h1{{font-size:32px;line-height:1.1;margin:0;}} .blue{{color:#2A9DFF;}}
-label{{display:block;margin:14px 0 6px;font-size:13px;color:#A0B4CC;}}
-input{{width:100%;padding:14px;background:#050A14;border:1px solid #1E3A5F;border-radius:10px;color:#fff;box-sizing:border-box;}}
-.btn{{width:100%;padding:14px;background:linear-gradient(90deg,#1E6FFF,#2ABFFF);border:none;border-radius:10px;color:#fff;font-weight:700;margin-top:18px;cursor:pointer;display:block;text-align:center;text-decoration:none;}}
-.btn-dark{{background:#111;border:1px solid #333;}}
-.badge{{background:#0A1F3A;color:#2ABFFF;border:1px solid #1E4A7A;padding:4px 10px;border-radius:20px;font-size:10px;letter-spacing:1px;display:inline-block;}}
-.stat{{background:#0A1428;border:1px solid #1E3A5F;border-radius:12px;padding:16px;}}
-.small{{font-size:11px;color:#7A8CA6;margin-top:8px;line-height:1.4;}}
-</style></head><body><div class="grid-bg">{body}</div></body></html>
-"""
-
-# ===== LANDING =====
-@app.get("/", response_class=HTMLResponse)
-def landing():
-    body = f"""
-<div class="topbar"><b>{BRAND_SHORT} <span class="blue">Engine</span></b><a href="/mentor/login" style="color:#fff;text-decoration:none;border:1px solid #333;padding:6px 14px;border-radius:20px;font-size:12px;">Sign in</a></div>
-<div style="max-width:1000px;margin:40px auto;padding:0 20px;">
-<div class="badge">INSTITUTIONAL MTF: H1 BIAS / M15 SWEEP / M1 EXECUTION</div>
-<h1 style="font-size:44px;margin-top:20px;">Your trading edge,<br><span class="blue">always online.</span></h1>
-<p style="color:#7A8CA6;line-height:1.6;max-width:600px;">Deploy mentor-built MTF robots, scan liquidity sweeps, and execute on MT4/MT5 from one secure platform. No VPS.</p>
-<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:24px;">
-<a href="/activate" class="btn" style="width:auto;padding:12px 24px;">Open an Account - R500 Lifetime</a>
-<a href="/download" class="btn btn-dark" style="width:auto;padding:12px 20px;">Download Android APK</a>
-</div>
-<div style="margin-top:40px;background:#0A1428;border:1px solid #1E3A5F;border-radius:16px;padding:24px;">
-<h2>Operations Overview</h2>
-<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;">
-<div class="stat"><b>{len(ROBOTS)}</b>ACTIVE ROBOTS</div>
-<div class="stat"><b>{len(LICENSES)}</b>LICENSED USERS</div>
-<div class="stat"><b>{len(SIGNALS)}</b>LIVE SIGNALS</div>
-<div class="stat"><b>MTF</b>FRAMEWORK</div>
-</div>
-<div style="margin-top:16px;background:#050A14;border-radius:10px;padding:14px;font-family:monospace;font-size:12px;color:#2ABFFF;">Engine: H1 Macro (EMA 9/21/200) → M15/M5 Wick Purge → M1 BB Touch + EMA Cross + ATR Trail + Stacking</div>
-</div>
-</div>
-"""
-    return make_html("Home", body)
-
-# ===== ACTIVATE =====
-@app.get("/activate", response_class=HTMLResponse)
-def activate_page():
-    body = f"""
-<div style="padding:20px;"><a href="/" style="color:#7A8CA6;text-decoration:none;">← Back</a></div>
-<div class="card" style="text-align:center;">
-<div style="background:#000;width:80px;height:80px;margin:0 auto;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:900;color:#2ABFFF;">{BRAND_SHORT}</div>
-<h2>Open {BRAND_NAME}</h2>
-<p class="small">Lifetime app access - One-time R500 per email<br>Pay via GoTymebank, then submit. Admin approves after proof.</p>
-<form method="post" action="/activate" style="text-align:left;">
-<label>Email</label><input name="email" type="email" placeholder="you@example.com" required>
-<label>MT Account (MT-1234 or number)</label><input name="mt_id" placeholder="MT-1234" required>
-<label>Partner Code (optional)</label><input name="partner_code" placeholder="BP-XXXXXX">
-<div class="small">Referred by partner? Enter code here for commission.</div>
-<button class="btn" type="submit">Activate</button>
-</form>
-<div class="small" style="margin-top:14px;text-align:left;background:#050A14;padding:10px;border-radius:8px;">{GOTYME_BANK}</div>
-</div>
-"""
-    return make_html("Activate", body)
-
-@app.post("/activate")
-def do_activate(email: str = Form(...), mt_id: str = Form(...), partner_code: str = Form("")):
-    email = email.lower().strip()
-    my_code = f"BP-{secrets.token_hex(3).upper()}"
-    
-    LICENSES[email] = {
-        "email": email, "mt_id": mt_id.strip(), "partner_code": partner_code.upper().strip(),
-        "my_code": my_code, "active": False, 
-        "created": datetime.utcnow().isoformat(),
-        "reason": "Pending R500 payment"
+class ParticlePainter extends CustomPainter {
+  final double t; ParticlePainter({required this.t});
+  @override void paint(Canvas c, Size s){
+    final r = Random(42);
+    final paint = Paint();
+    for(int i=0;i<40;i++){
+      double x = (r.nextDouble()*s.width + t*s.width*0.2) % s.width;
+      double y = (r.nextDouble()*s.height + sin(t*2*pi + i)*30) % s.height;
+      double sz = r.nextDouble()*2+0.5;
+      paint.color = Color.lerp(const Color(0xFF8B5CF6), Colors.white, r.nextDouble()*0.5)!.withOpacity(0.1+r.nextDouble()*0.3);
+      c.drawCircle(Offset(x,y), sz, paint);
     }
-    PENDING.append({"email": email, "mt_id": mt_id, "partner_code": partner_code, "time": datetime.utcnow().isoformat()})
-    
-    save_json(DB_FILE, LICENSES)
-    save_json("pending.json", PENDING)
-    
-    if partner_code.upper() in PARTNERS:
-        PARTNERS[partner_code.upper()]["referrals"].append(email)
+  }
+  @override bool shouldRepaint(covariant ParticlePainter old)=>true;
+}
 
-    return HTMLResponse(make_html("Pending", f"""
-<div class="card" style="text-align:center;">
-<h2>Application Received ✓</h2>
-<p>Email: <b>{email}</b><br>MT: <b>{mt_id}</b><br>Your Partner Code: <b style="color:#2ABFFF">{my_code}</b></p>
-<div style="background:#050A14;border:1px solid #1E3A5F;border-radius:10px;padding:12px;margin:16px 0;text-align:left;">
-<b>Next Steps:</b><br>1. Pay R500 to GoTymebank<br><b>{GOTYME_BANK}</b><br>Reference: {email}<br>2. Send proof on WhatsApp<br>3. Admin approves in <1 hour
-</div>
-<a href="/" class="btn">Back to Home</a>
-</div>
-"""))
+class RealLightningPainter extends CustomPainter {
+  final double t; RealLightningPainter({required this.t});
+  @override void paint(Canvas canvas, Size size){
+    final rand = Random(123);
+    double flashChance = sin(t*2*pi*1.7).abs();
+    if(flashChance>0.92){
+      final flashPaint = Paint()..color=Colors.white.withOpacity((flashChance-0.92)*3)..style=PaintingStyle.fill;
+      canvas.drawRect(Rect.fromLTWH(0,0,size.width,size.height), flashPaint);
+    }
+    for(int b=0;b<2;b++){
+      if(rand.nextDouble()>0.6) continue;
+      double startX = rand.nextDouble()*size.width;
+      double startY = -10;
+      double endX = startX + (rand.nextDouble()-0.5)*200;
+      double endY = size.height*0.7 + rand.nextDouble()*200;
+      _drawBolt(canvas, Offset(startX, startY), Offset(endX, endY), rand, mainColor: const Color(0xFFA78BFA), glow: true);
+      if(rand.nextBool()){
+        _drawBolt(canvas, Offset(startX*0.6+endX*0.4, startY*0.3+endY*0.7), Offset(endX+rand.nextDouble()*100-50, endY+50), rand, mainColor: const Color(0xFF8B5CF6).withOpacity(0.6), glow:false, width:0.8);
+      }
+    }
+  }
+  void _drawBolt(Canvas canvas, Offset start, Offset end, Random rand, {required Color mainColor, required bool glow, double width=1.5}){
+    final path = Path()..moveTo(start.dx, start.dy);
+    double x=start.dx, y=start.dy;
+    int segments = 18;
+    for(int i=0;i<segments;i++){
+      double progress = (i+1)/segments;
+      double targetX = start.dx + (end.dx-start.dx)*progress;
+      double targetY = start.dy + (end.dy-start.dy)*progress;
+      x = targetX + (rand.nextDouble()-0.5)*30;
+      y = targetY + (rand.nextDouble()-0.5)*10;
+      path.lineTo(x,y);
+    }
+    if(glow){
+      final glowPaint = Paint()..color=mainColor.withOpacity(0.15)..strokeWidth=width+6..style=PaintingStyle.stroke..maskFilter=const MaskFilter.blur(BlurStyle.normal, 8);
+      canvas.drawPath(path, glowPaint);
+    }
+    final paint = Paint()..color=mainColor..strokeWidth=width..style=PaintingStyle.stroke..strokeCap=StrokeCap.round;
+    canvas.drawPath(path, paint);
+    final corePaint = Paint()..color=Colors.white.withOpacity(0.8)..strokeWidth=width*0.4..style=PaintingStyle.stroke;
+    canvas.drawPath(path, corePaint);
+  }
+  @override bool shouldRepaint(covariant RealLightningPainter old)=>true;
+}
 
-# ===== AUTH =====
-@app.get("/mentor/login", response_class=HTMLResponse)
-def login_page():
-    body = """
-<div style="padding:20px;"><a href="/" style="color:#7A8CA6;text-decoration:none;">← Back</a></div>
-<div class="card">
-<h2>Welcome Back</h2>
-<p class="small">Enter your approved email</p>
-<form method="post" action="/mentor/login" style="margin-top:16px;">
-<label>Email</label><input name="email" type="email" required>
-<label>Password (any - email is license)</label><input name="password" type="password" required>
-<button class="btn">Login to Dashboard</button>
-</form>
-<div style="text-align:center;margin-top:12px;"><small>Don't have account? <a href="/activate" style="color:#2ABFFF;">Open account</a></small></div>
-</div>
-"""
-    return make_html("Login", body)
+// LIVE REAL TIME
+class LiveClock extends StatefulWidget { const LiveClock({super.key}); @override State<LiveClock> createState()=>_LiveClockState();}
+class _LiveClockState extends State<LiveClock> { late Timer timer; DateTime now=DateTime.now(); @override void initState(){ timer=Timer.periodic(const Duration(seconds:1), (_)=> setState(()=> now=DateTime.now())); super.initState();} @override void dispose(){ timer.cancel(); super.dispose();} @override Widget build(BuildContext context){ return Text("${now.toLocal().toString().split('.')[0]}", style: const TextStyle(color: Colors.white38, fontSize: 11)); }}
 
-@app.post("/mentor/login")
-def login(email: str = Form(...), password: str = Form(...)):
-    email = email.lower().strip()
-    lic = LICENSES.get(email)
-    if not lic:
-        return HTMLResponse(make_html("Not Found", f'<div class="card"><h2>Email not found</h2><p>{email} not registered. <a href="/activate" style="color:#2ABFFF;">Activate</a></p></div>'), status_code=401)
-    if not lic.get("active"):
-        return HTMLResponse(make_html("Pending", f'<div class="card"><h2>Awaiting Approval</h2><p>{email} is pending. Send GoTymebank proof. Reason: {lic.get("reason")}</p><a href="/" class="btn">Home</a></div>'))
-    return RedirectResponse(f"/dashboard?email={email}", status_code=302)
+class MainNav extends StatefulWidget {
+  const MainNav({super.key});
+  @override
+  State<MainNav> createState() => _MainNavState();
+}
 
-@app.get("/dashboard", response_class=HTMLResponse)
-def dashboard(email: str = Query("")):
-    email = email.lower().strip()
-    lic = LICENSES.get(email, {})
-    if not lic.get("active"):
-        return RedirectResponse("/mentor/login")
-    
-    robots_html = "".join([f'<div class="stat" style="margin-top:12px;"><b>{r["name"]}</b> <span style="float:right;color:#2ABFFF">{r["winrate"]}</span><br><small style="color:#7A8CA6;">{r["desc"]} | TF: {r["tf"]} | Mentor: {r["mentor"]}</small><br><button class="btn" style="width:auto;padding:8px 16px;margin-top:10px;font-size:12px;">Deploy to MT {lic.get("mt_id","")}</button></div>' for r in ROBOTS])
-    
-    return make_html("Dashboard", f"""
-<div class="topbar"><b>{BRAND_SHORT} Engine</b><small>{email} | {lic.get("my_code")}</small></div>
-<div style="max-width:900px;margin:20px auto;padding:20px;">
-<h2>Welcome, {email}</h2>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-<div class="stat"><b>{lic.get("my_code")}</b><br><small>YOUR PARTNER CODE</small></div>
-<div class="stat"><b>{len(PARTNERS.get(lic.get("my_code"),{}).get("referrals",[]))}</b><br><small>YOUR REFERRALS</small></div>
-</div>
-<h3 style="margin-top:28px;">Available Robots - MTF Engine</h3>
-{robots_html}
-<div class="stat" style="margin-top:20px;background:linear-gradient(90deg,#0A1F3A,#0A1428);"><b style="color:#2ABFFF;">● Signal Relay: ONLINE</b><br><small>AI Engine connected | {len(SIGNALS)} signals today</small></div>
-</div>
-""")
+class _MainNavState extends State<MainNav> {
+  int idx = 0;
+  final screens = [const HomeScreen(), const MetatraderScreen(), const ScannerScreen(), const SettingsScreen()];
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: screens[idx],
+      bottomNavigationBar: BottomNavigationBar(
+        backgroundColor: const Color(0xFF140E26),
+        type: BottomNavigationBarType.fixed,
+        currentIndex: idx,
+        onTap: (i) => setState(() => idx = i),
+        selectedItemColor: const Color(0xFF8B5CF6),
+        unselectedItemColor: Colors.white38,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: "Home"),
+          BottomNavigationBarItem(icon: Icon(Icons.desktop_windows_outlined), label: "Metatrader"),
+          BottomNavigationBarItem(icon: Icon(Icons.psychology_outlined), label: "Scanner"),
+          BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), label: "Settings"),
+        ],
+      ),
+    );
+  }
+}
 
-# ===== VERIFY - EA CALLS THIS =====
-@app.get("/verify")
-def verify(key: str = Query(""), email: str = Query("")):
-    target = (key or email).lower().strip()
-    if not target:
-        return JSONResponse({"approved": False, "reason": "No key"})
-    
-    # Search by email or MT ID
-    found_email = None
-    found_data = None
-    for e,d in LICENSES.items():
-        if e.lower() == target or d.get("mt_id","").lower() == target.lower():
-            found_email = e
-            found_data = d
-            break
-    
-    if not found_data:
-        return JSONResponse({"approved": False, "reason": "Invalid key - not registered"})
-    if not found_data.get("active"):
-        return JSONResponse({"approved": False, "reason": found_data.get("reason","Pending approval")})
-    
-    return JSONResponse({
-        "approved": True, "email": found_email, "mt_id": found_data.get("mt_id"),
-        "access": "granted", "partner_code": found_data.get("my_code"),
-        "brand": BRAND_NAME
-    })
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Center(child: LiveClock()),
+            const SizedBox(height: 12),
+            Container(
+              height: 360,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: const Color(0xFF3A2A60)),
+                gradient: const LinearGradient(colors: [Color(0xFF2A1F45), Color(0xFF0C0816)]),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  const Icon(Icons.memory, size: 100, color: Color(0xFF8B5CF6)),
+                  const SizedBox(height: 20),
+                  const Text("KAYVIEW CHARGER", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22, letterSpacing: 1)),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), border: Border.all(color: Color(0xFF8B5CF6)), color: Color(0xFF1E1635)),
+                    child: const Text("Powered By Ambient", style: TextStyle(color: Colors.white, fontSize: 12)),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(30), border: Border.all(color: const Color(0xFF8B5CF6)), color: const Color(0xFF1A1430)),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  Row(children: [Icon(Icons.close, size: 18, color: Color(0xFF8B5CF6)), SizedBox(width: 6), Text("Remove", style: TextStyle(color: Colors.white, fontSize: 13))]),
+                  Row(children: [Icon(Icons.play_arrow, size: 18, color: Color(0xFF8B5CF6)), SizedBox(width: 6), Text("Start", style: TextStyle(color: Colors.white, fontSize: 13))]),
+                  Row(children: [Icon(Icons.bar_chart, size: 18, color: Color(0xFF8B5CF6)), SizedBox(width: 6), Text("Symbols", style: TextStyle(color: Colors.white, fontSize: 13))]),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("ROBOT LIST", style: TextStyle(color: Colors.white38, fontSize: 13)),
+                Text("+ Add Key", style: TextStyle(color: Color(0xFF8B5CF6), fontSize: 13, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(30), border: Border.all(color: const Color(0xFF8B5CF6)), color: const Color(0xFF1A1430)),
+              child: Row(
+                children: [
+                  const CircleAvatar(backgroundColor: Color(0xFF2A1F45), radius: 22, child: Icon(Icons.memory, color: Colors.white38)),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text("KAYVIEW CHARGER", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                      Text("PHE••••E78", style: TextStyle(color: Colors.white38, fontSize: 11)),
+                      Text("Key expires in 361d 15h", style: TextStyle(color: Color(0xFF8B5CF6), fontSize: 10)),
+                    ]),
+                  ),
+                  Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF2A1F45), borderRadius: BorderRadius.circular(20)), child: const Icon(Icons.delete_outline, size: 18, color: Colors.white38)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-# ===== SIGNALS =====
-@app.post("/api/signal")
-async def post_signal(request: Request):
-    data = await request.json()
-    data["at"] = datetime.utcnow().isoformat()
-    SIGNALS.append(data)
-    save_json(SIGNALS_FILE, SIGNALS[-200:])
-    return {"received": True, "count": len(SIGNALS)}
+class MetatraderScreen extends StatelessWidget {
+  const MetatraderScreen({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 12), decoration: BoxDecoration(borderRadius: BorderRadius.circular(30), border: Border.all(color: const Color(0xFF8B5CF6)), color: const Color(0xFF140E26)), child: const Center(child: Text("MT5 ACCOUNT", style: TextStyle(color: Color(0xFF8B5CF6), fontWeight: FontWeight.bold)))),
+            const SizedBox(height: 16),
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [Container(width: 10, height: 10, decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(10))), const SizedBox(width: 8), const Text("MT5 DISCONNECTED", style: TextStyle(color: Colors.white54, fontSize: 12))]),
+            const SizedBox(height: 24),
+            Container(height: 180, decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFC5A86A)), gradient: const LinearGradient(colors: [Color(0xFF2B2B2B), Color(0xFF0F0F0F)])), child: const Padding(padding: EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("KC  KAYVIEW CHARGER", style: TextStyle(color: Color(0xFFC5A86A), fontWeight: FontWeight.bold, fontSize: 16)), Spacer(), Text("TAP TO FLIP", style: TextStyle(color: Colors.white24, fontSize: 9))] ))),
+            const SizedBox(height: 20),
+            const Text("MT5 LOGIN DETAILS", style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            const Row(children: [Expanded(child: _Tab(active: true, t: "CONNECT ACCOUNT")), SizedBox(width: 10), Expanded(child: _Tab(active: false, t: "ORDERS"))]),
+            const SizedBox(height: 16),
+            _input("Login"),
+            const SizedBox(height: 12),
+            _input("Password", isPass: true),
+            const SizedBox(height: 12),
+            _input("Server", isServer: true),
+          ],
+        ),
+      ),
+    );
+  }
+  static Widget _input(String hint, {bool isPass = false, bool isServer = false}) {
+    return Container(
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFF8B5CF6)), color: const Color(0xFF1A1A1A)),
+      child: TextField(obscureText: isPass, decoration: InputDecoration(hintText: hint, hintStyle: const TextStyle(color: Colors.white24), border: InputBorder.none, contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16), suffixIcon: isPass || isServer ? Container(margin: const EdgeInsets.all(4), decoration: BoxDecoration(color: const Color(0xFF2A2A2A), borderRadius: BorderRadius.circular(14)), child: Icon(isPass ? Icons.visibility_outlined : Icons.close, color: const Color(0xFF8B5CF6), size: 18)) : null)),
+    );
+  }
+}
 
-@app.get("/api/signals")
-def get_signals():
-    return JSONResponse(SIGNALS[-50:])
+class _Tab extends StatelessWidget {
+  final bool active; final String t;
+  const _Tab({required this.active, required this.t});
+  @override
+  Widget build(BuildContext context) {
+    return Container(padding: const EdgeInsets.symmetric(vertical: 14), decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: active ? const Color(0xFF2A1A4A) : const Color(0xFF1A1A1A), border: Border.all(color: active ? const Color(0xFF8B5CF6) : Colors.white10)), child: Center(child: Text(t, style: TextStyle(color: active ? const Color(0xFF8B5CF6) : Colors.white38, fontSize: 12, fontWeight: FontWeight.bold))));
+  }
+}
 
-# ===== ADMIN - SECURED =====
-@app.get("/admin", response_class=HTMLResponse)
-def admin_page(password: str = Query("")):
-    if password != ADMIN_PASSWORD:
-        return HTMLResponse(make_html("Admin Login", f"""
-<div class="card"><h2>Admin Access</h2>
-<form><label>Admin Password</label><input name="password" type="password" placeholder="{ADMIN_PASSWORD}"><button class="btn">Login</button></form>
-<small class="small">Default: {ADMIN_PASSWORD} - Change in code!</small>
-</div>
-"""))
-    
-    pending = [p for p in PENDING if not LICENSES.get(p["email"],{}).get("active")]
-    pending_html = "".join([f"<div style='border:1px solid #1E3A5F;padding:12px;margin:8px 0;border-radius:10px;background:#0A1428;'><b>{p['email']}</b> | MT: {p['mt_id']} | Partner: {p['partner_code']} | {p['time'][:16]} <br><a href='/admin/approve?email={p['email']}&password={ADMIN_PASSWORD}' style='color:#00FF88;margin-right:12px;'>[APPROVE]</a><a href='/admin/deny?email={p['email']}&password={ADMIN_PASSWORD}' style='color:#FF4444;'>[DENY]</a></div>" for p in pending])
-    
-    all_html = "".join([f"<div style='padding:6px;border-bottom:1px solid #111;font-size:13px;'>{e} - MT:{d.get('mt_id')} - Code:{d.get('my_code')} - <span style='color:{'#0F0' if d.get('active') else '#FA0'}'>{d.get('active')}</span></div>" for e,d in LICENSES.items()])
-    
-    return make_html("Admin", f"""
-<div style="max-width:1000px;margin:20px auto;padding:20px;">
-<h1>{BRAND_NAME} - Admin Panel</h1>
-<p class="small">Total licenses: {len(LICENSES)} | Pending: {len(pending)} | Signals: {len(SIGNALS)}</p>
-<h2 style="color:#FFAA00;">Pending Approval ({len(pending)})</h2>
-{pending_html or "<p>No pending</p>"}
-<h2 style="margin-top:30px;">All Licenses</h2>
-<div style="background:#0A1428;border:1px solid #1E3A5F;border-radius:10px;padding:10px;max-height:400px;overflow:auto;">{all_html or "None"}</div>
-<h2 style="margin-top:30px;">Live Signals</h2>
-<div style="background:#050A14;padding:10px;border-radius:10px;font-family:monospace;font-size:11px;">{json.dumps(SIGNALS[-10:], indent=2)}</div>
-</div>
-""")
+class ScannerScreen extends StatelessWidget {
+  const ScannerScreen({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            Container(width: 80, height: 80, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF8B5CF6))), child: const Center(child: Text("A", style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold)))),
+            const SizedBox(height: 16),
+            const Text("AI Analysis", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const Text("SNIPER ELITE · ENTRY HUNTER", style: TextStyle(color: Colors.white38, fontSize: 11)),
+            const SizedBox(height: 12),
+            const Text("1. Pick pair & timeframe\n2. Watch the live chart & ask/bid\n3. Tap Analyse to fire the sniper", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 12)),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), color: const Color(0xFF1A1030), border: Border.all(color: Colors.white10)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text("PAIR (PICK)", style: TextStyle(color: Colors.white38, fontSize: 11)),
+                const SizedBox(height: 6),
+                _dropdown("XAUUSD"),
+                const SizedBox(height: 12),
+                const Text("TIMEFRAME", style: TextStyle(color: Colors.white38, fontSize: 11)),
+                const SizedBox(height: 6),
+                _dropdown("M15"),
+                const SizedBox(height: 16),
+                Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), color: const Color(0xFF0C0816), border: Border.all(color: Colors.white10)), child: Column(children: [
+                  const Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("LIVE QUOTE", style: TextStyle(color: Colors.white38, fontSize: 10)), Text("XAUUSD", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))]), Text("Fetching...", style: TextStyle(color: Colors.white54, fontSize: 11))]),
+                  const SizedBox(height: 12),
+                  const Row(children: [
+                    Expanded(child: _BidAsk(color: Colors.red, label: "BID")),
+                    SizedBox(width: 10),
+                    Expanded(child: _BidAsk(color: Colors.green, label: "ASK")),
+                  ]),
+                ])),
+              ]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  static Widget _dropdown(String val) => Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: const Color(0xFF2A2A2A), border: Border.all(color: Colors.white24)), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(val, style: const TextStyle(fontWeight: FontWeight.bold)), const Icon(Icons.keyboard_arrow_down, color: Colors.white54)]));
+}
 
-@app.get("/admin/approve")
-def admin_approve(email: str = Query(""), password: str = Query("")):
-    if password != ADMIN_PASSWORD:
-        return JSONResponse({"error":"Unauthorized"}, status_code=401)
-    email = email.lower().strip()
-    if email in LICENSES:
-        LICENSES[email]["active"] = True
-        LICENSES[email]["reason"] = "Approved - Lifetime Access"
-        save_json(DB_FILE, LICENSES)
-    return RedirectResponse(f"/admin?password={password}")
+class _BidAsk extends StatelessWidget {
+  final Color color; final String label;
+  const _BidAsk({required this.color, required this.label});
+  @override
+  Widget build(BuildContext context) {
+    return Container(padding: const EdgeInsets.symmetric(vertical: 14), decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), border: Border.all(color: color)), child: Column(children: [Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)), const Text("--", style: TextStyle(fontWeight: FontWeight.bold))]));
+  }
+}
 
-@app.get("/admin/deny")
-def admin_deny(email: str = Query(""), password: str = Query("")):
-    if password != ADMIN_PASSWORD:
-        return JSONResponse({"error":"Unauthorized"}, status_code=401)
-    email = email.lower().strip()
-    LICENSES.pop(email, None)
-    save_json(DB_FILE, LICENSES)
-    return RedirectResponse(f"/admin?password={password}")
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: const [
+          Text("Settings", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          SizedBox(height: 12),
+          _SetCard(title: "FONT", value: "Space Grotesk"),
+          _SetCard(title: "THEME", value: "Purple"),
+          _SetCard(title: "BACKGROUND EFFECT", value: "Lightning - LIVE"),
+          _SetCard(title: "AI STRATEGY", value: "Auto - Full confluence stack"),
+          _SetCard(title: "PRIME HOST EA - VOICE CONTROL", value: "Off"),
+        ],
+      ),
+    );
+  }
+}
 
-@app.get("/download", response_class=HTMLResponse)
-def download_page():
-    return make_html("Download", f"""
-<div class="card" style="text-align:center;">
-<h2>Download {BRAND_NAME}</h2>
-<p class="small">Android APK - MTF Engine V7.02</p>
-<a href="#" class="btn">Download APK (Add your Drive link here)</a>
-<p class="small" style="margin-top:20px;">1. Install APK<br>2. Open account (R500)<br>3. Connect MT4/MT5<br>4. Deploy robot</p>
-<a href="/" class="btn btn-dark">Back to Home</a>
-</div>
-""")
-
-@app.get("/health")
-def health():
-    return {"ok": True, "brand": BRAND_NAME, "licenses": len(LICENSES), "signals": len(SIGNALS)}
+class _SetCard extends StatelessWidget {
+  final String title, value;
+  const _SetCard({required this.title, required this.value});
+  @override
+  Widget build(BuildContext context) {
+    return Container(margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(14), decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), color: const Color(0xFF1E1040), border: Border.all(color: Colors.white10)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(color: Colors.white38, fontSize: 10)), Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13))]));
+  }
+}
